@@ -1,0 +1,107 @@
+**Separating namespace: watching multiple namespaces**
+
+AMQ Streams allows the cluster operator to monitor a set of separate namespaces, which could be useful for teams that want to manage their own individual clusters.
+Each namespace is independent of the other, and resources created in each of them will result in the creation of clusters, topics and users in that specific namespace.
+
+* Creating the namespaces
+
+Let's set up two separate projects: `team-1` and `team-2`.
+
+````
+oc create namespace team-1
+````
+
+and
+
+````
+oc new-project team-2
+````
+
+We will still deploy the cluster operator in the `amq-streams` project.
+Let's revert to the original project `amq-streams`.
+
+````
+oc project amq-streams
+````
+
+**Configuring the cluster operator to watch multiple namespaces**
+
+First, update the configuration files to reference the target namespace of the cluster operator.
+If you've already done so in the first lab, skip this step.
+
+````
+sed -i 's/namespace: .*/namespace: amq-streams/' install/cluster-operator/*RoleBinding*.yaml
+````
+
+Next, alter the file `install/cluster-operator/050-Deployment-strimzi-cluster-operator.yaml` to point to the monitored projects.
+You need do so by editing the file and changing the value of `STRIMZI_NAMESPACE` from its original form:
+
+````
+...
+       env:
+        - name: STRIMZI_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+...
+````
+
+to:
+
+````
+...
+        env:
+        - name: STRIMZI_NAMESPACE
+          value: amq-streams,team-1,team-2
+...
+````
+
+Next, install `RoleBinding`s for each of the two monitored namespaces:
+
+````
+oc apply -f install/cluster-operator/020-RoleBinding-strimzi-cluster-operator.yaml -n team-1
+oc apply -f install/cluster-operator/031-RoleBinding-strimzi-cluster-operator-entity-operator-delegation.yaml -n team-1
+oc apply -f install/cluster-operator/032-RoleBinding-strimzi-cluster-operator-topic-operator-delegation.yaml -n team-1
+````
+
+and
+
+````
+oc apply -f install/cluster-operator/020-RoleBinding-strimzi-cluster-operator.yaml -n team-2
+oc apply -f install/cluster-operator/031-RoleBinding-strimzi-cluster-operator-entity-operator-delegation.yaml -n team-2
+oc apply -f install/cluster-operator/032-RoleBinding-strimzi-cluster-operator-topic-operator-delegation.yaml -n team-2
+````
+
+Finally, install - or re-install and reconfigure the `cluster-operator`.
+
+````
+oc apply -f install/cluster-operator
+````
+
+Now we can deploy clusters, topics and users in each of these namespaces.
+Use the console to monitor the result.
+
+Let's deploy a new cluster in the project `team-1` first (note the namespace reference in the `oc` command).
+
+````
+oc apply -f /configurations/clusters/production-ready.yaml -n team-1
+````
+
+From the OpenShift console, navigate to the `team-1` project and notice the new cluster, as well as service.
+
+Let's see that the cluster works.
+
+Reconfigure the `timer-producer` and `log-consumer` applications to use the new cluster.
+
+````
+oc apply -f /configurations/applications/log-consumer-team-1.yaml
+oc apply -f /configurations/applications/timer-producer-team-1.yaml
+````
+
+Now let's deploy a second cluster in the project `team-2` (note again the namespace reference in the `oc` command).
+
+````
+oc apply -f /configurations/clusters/production-ready.yaml -n team-2
+````
+
+You should see the new cluster being created by observing the `team-2` project in the OpenShift console.
